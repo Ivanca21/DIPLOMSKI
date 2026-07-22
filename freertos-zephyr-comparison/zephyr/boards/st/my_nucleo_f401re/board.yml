@@ -1,0 +1,7 @@
+board:
+  name: my_nucleo_f401re
+  full_name: My Minimal Nucleo F401RE
+  vendor: st
+  socs:
+    - name: stm32f401xe
+
