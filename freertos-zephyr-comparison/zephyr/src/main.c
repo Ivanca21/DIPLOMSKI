@@ -108,8 +108,9 @@ static void button_pressed_callback(const struct device *dev,
     /*
      * Wake the main thread blocked in k_sem_take(). If that thread has
      * higher priority than whatever was preempted, the context switch
-     * happens on interrupt exit. Main thread is set to have the highest
-     * priority in zephyr.config via CONFIG_MAIN_THREAD_PRIORITY=0.
+     * happens on interrupt exit. The main thread runs at the highest
+     * priority by default (CONFIG_MAIN_THREAD_PRIORITY defaults to 0),
+     * so no explicit setting is needed in prj.conf.
      */
     k_sem_give(&button_sem);
 }
