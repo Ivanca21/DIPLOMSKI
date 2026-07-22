@@ -21,14 +21,14 @@ Korišćena razvojna ploča:
 - Mikrokontroler: **STM32F401RE**
 - CPU jezgro: **ARM Cortex-M4**
 - Sistemski takt: **84 MHz**
-- Alat za merenje: **USB logic analyzer 24 MHz**
+- Alat za merenje: **USB logic analyzer**
 
 Korišćeni pinovi:
 
 | Funkcija | Pin | Opis |
 |---|---:|---|
-| USER button B1 | PC13 | Ulazni taster koji generiše prekid |
-| USER LED LD2 | PA5 | Vizuelna indikacija da je task/thread izvršen |
+| USER button | PC13 | Ulazni taster koji generiše prekid |
+| USER LED | PA5 | Vizuelna indikacija da je task/thread izvršen |
 | Marker pin | PA6 | Digitalni signal za merenje latencije |
 | GND | GND | Zajednička masa sa logic analyzer-om |
 
@@ -58,8 +58,6 @@ task/thread resume
 PA6 = LOW
 ```
 
-Važno: merenje ne predstavlja izolovan benchmark samog schedulera. Meri se kompletna praktična signalna putanja od interrupt/callback dela do nastavka izvršavanja task/thread koda.
-
 Marker pin se u obe implementacije kontroliše direktnim upisom u STM32 registar `GPIOA_BSRR`, kako bi overhead samog marker signala bio minimalan i uporediv u oba sistema.
 
 ---
@@ -67,8 +65,8 @@ Marker pin se u obe implementacije kontroliše direktnim upisom u STM32 registar
 ## Struktura repozitorijuma
 
 ```text
-DIPLOMSKI/
-├── FREERTOS/
+freertos-zephyr-comparison/
+├── freertos/
 │   ├── Inc/
 │   ├── Src/
 │   ├── Startup/
@@ -79,7 +77,7 @@ DIPLOMSKI/
 │   ├── .cproject
 │   └── .settings/
 │
-├── button_latency/
+├── zephyr/
 │   ├── boards/
 │   │   └── st/
 │   │       └── my_nucleo_f401re/
@@ -206,7 +204,7 @@ PA6 = LOW
 Primer build komande iz root foldera repozitorijuma:
 
 ```bat
-west build -p always -b my_nucleo_f401re button_latency -- -DBOARD_ROOT=%cd%\button_latency
+west build -p always -b my_nucleo_f401re button_latency -- -DBOARD_ROOT=%cd%\zephyr
 ```
 
 Primer flash komande:
@@ -288,9 +286,6 @@ Ako se iz prikazanog RAM zauzeća izuzme statički rezervisan heap, preostalo st
 ```text
 12088 B - 10240 B = 1848 B
 ```
-
-Ovo poređenje treba tumačiti pažljivo, jer FreeRTOS i Zephyr ne prikazuju RAM zauzeće na potpuno isti način.
-
 ---
 
 ## Zaključak
