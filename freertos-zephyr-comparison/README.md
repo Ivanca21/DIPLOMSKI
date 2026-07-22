@@ -1,64 +1,72 @@
 # FreeRTOS vs Zephyr Latency Comparison on STM32 NUCLEO-F401RE
 
-Ovaj repozitorijum sadrži dva projekta za istu STM32 NUCLEO-F401RE platformu:
+This repository contains the source code used as supporting material for the diploma thesis:
 
-1. **FreeRTOS implementaciju**
-2. **Zephyr implementaciju**
+> **Postupak portovanja operativnog sistema Zephyr na ciljnu platformu i poređenje performansi sa operativnim sistemom FreeRTOS**
 
-Cilj je poređenje real-time ponašanja dva RTOS-a kroz merenje latencije od eksternog interrupt-a do izvršavanja task/thread koda.
+The project compares two implementations of the same interrupt-to-task/thread latency test on the **STM32 NUCLEO-F401RE** development board:
 
-Tema rada:
+1. a **FreeRTOS** implementation with direct register access, and
+2. a **Zephyr** implementation using an out-of-tree custom board port.
 
-> Roadmap za portovanje Zephyra i poređenje performansi Zephyra i FreeRTOS-a
+The goal is not to benchmark only the kernel scheduler in isolation, but to compare the complete practical signal path used in each implementation.
 
 ---
 
-## Platforma
+## Platform
 
-Korišćena razvojna ploča:
+Hardware platform:
 
-- **STM32 NUCLEO-F401RE**
-- Mikrokontroler: **STM32F401RE**
-- CPU jezgro: **ARM Cortex-M4**
-- Sistemski takt: **84 MHz**
-- Alat za merenje: **USB logic analyzer 24 MHz**
+- **Development board:** STM32 NUCLEO-F401RE
+- **Microcontroller:** STM32F401RE
+- **CPU core:** ARM Cortex-M4
+- **System clock:** 84 MHz
+- **Measurement tool:** USB logic analyzer, 24 MHz
 
-Korišćeni pinovi:
+Used signals:
 
-| Funkcija | Pin | Opis |
+| Function | Pin | Description |
 |---|---:|---|
-| USER button | PC13 | Ulazni taster, koristi EXTI13 interrupt |
-| LD2 LED | PA5 | Vizuelna potvrda obrade događaja |
-| Latency marker | PA6 | Signal koji meri logic analyzer |
+| USER button B1 | PC13 | Input signal that generates the interrupt |
+| USER LED LD2 | PA5 | Visual indication that the task/thread has executed |
+| Latency marker | PA6 | Digital signal measured by the logic analyzer |
+| Ground | GND | Common ground with the logic analyzer |
 
 ---
 
-## Ideja merenja
+## Measurement Principle
 
-Merenje se zasniva na širini HIGH impulsa na pinu **PA6**.
+The latency measurement is based on the width of a HIGH pulse generated on the marker pin **PA6**.
 
-Tok događaja:
-
-1. Korisnik pritisne taster B1.
-2. PC13 generiše eksterni interrupt.
-3. ISR/callback postavlja PA6 na HIGH.
-4. ISR/callback signalizira task/thread preko semaphore mehanizma.
-5. Task/thread se budi.
-6. Task/thread spušta PA6 na LOW.
-7. Logic analyzer meri trajanje HIGH stanja na PA6.
-
-Izmereni impuls predstavlja vreme od početka interrupt obrade do nastavka izvršavanja task/thread koda.
-
-
----
-
-## Struktura repozitorijuma
-
-Predložena struktura:
+Measurement flow:
 
 ```text
-freertos-zephyr-comparison/
-├── freertos/
+USER button press on PC13
+    ↓
+Interrupt / GPIO callback context
+    ↓
+PA6 = HIGH
+    ↓
+Semaphore give
+    ↓
+Scheduler and context switch
+    ↓
+Task/thread resumes execution
+    ↓
+PA6 = LOW
+```
+
+The measured pulse width represents the time from the point where the event is identified in the interrupt/callback context to the point where the corresponding task/thread continues execution after the semaphore wait function returns.
+
+The marker pin is controlled by direct access to the STM32 `GPIOA_BSRR` register in both implementations. This avoids adding GPIO driver overhead to the marker signal itself.
+
+---
+
+## Repository Structure
+
+```text
+DIPLOMSKI/
+├── FREERTOS/
 │   ├── Inc/
 │   ├── Src/
 │   ├── Startup/
@@ -69,36 +77,49 @@ freertos-zephyr-comparison/
 │   ├── .cproject
 │   └── .settings/
 │
-├── zephyr/
+├── button_latency/
 │   ├── boards/
+│   │   └── st/
+│   │       └── my_nucleo_f401re/
+│   │           ├── board.yml
+│   │           ├── board.cmake
+│   │           ├── Kconfig.my_nucleo_f401re
+│   │           ├── my_nucleo_f401re.dts
+│   │           └── my_nucleo_f401re_defconfig
 │   ├── src/
+│   │   └── main.c
 │   ├── CMakeLists.txt
 │   └── prj.conf
 │
-├── README.md
+└── README.md
 ```
+
+Build output folders such as `Debug/`, `Release/` and `build/` are not part of the source code and should not be committed to the repository.
 
 ---
 
-## FreeRTOS projekat
+## FreeRTOS Implementation
 
-FreeRTOS projekat je realizovan u STM32CubeIDE okruženju, uz ručno podešen bare-metal kod za:
+The FreeRTOS test is implemented as a minimal bare-metal STM32 project in **STM32CubeIDE**.
 
-- GPIO konfiguraciju
-- EXTI interrupt
-- NVIC konfiguraciju
-- clock konfiguraciju na 84 MHz
-- PA6 latency marker
-- PA5 LED toggle
+The code directly configures:
 
-FreeRTOS deo koristi:
+- RCC clock configuration
+- GPIOA and GPIOC
+- SYSCFG
+- EXTI13 interrupt line
+- NVIC interrupt priority and enable control
+- PA6 marker pin
+- PA5 LED output
 
-- binary semaphore
+FreeRTOS synchronization is implemented with a binary semaphore:
+
+- `xSemaphoreCreateBinary()`
 - `xSemaphoreGiveFromISR()`
 - `xSemaphoreTake()`
 - `portYIELD_FROM_ISR()`
 
-Osnovna signalna putanja:
+FreeRTOS signal path:
 
 ```text
 PC13 button press
@@ -111,16 +132,16 @@ PA6 = HIGH
     ↓
 xSemaphoreGiveFromISR()
     ↓
-FreeRTOS context switch
+FreeRTOS scheduler / context switch
     ↓
-button_task()
+button_task resumes after xSemaphoreTake()
     ↓
 PA6 = LOW
 ```
 
-### FreeRTOS clock
+### FreeRTOS Clock Configuration
 
-FreeRTOS projekat podešava sistemski takt na 84 MHz:
+The FreeRTOS project configures the STM32F401RE system clock to **84 MHz**:
 
 ```text
 HSE = 8 MHz
@@ -131,32 +152,46 @@ PLLP = 4
 SYSCLK = (8 MHz / 8) × 336 / 4 = 84 MHz
 ```
 
-Zato je u `FreeRTOSConfig.h`:
+The same value must be used in `FreeRTOSConfig.h`:
 
 ```c
 #define configCPU_CLOCK_HZ 84000000UL
 ```
+
 ---
 
-## Zephyr projekat
+## Zephyr Implementation
 
-Zephyr projekat je realizovan kao custom board port za NUCLEO-F401RE.
+The Zephyr project is implemented as an **out-of-tree custom board port** named:
 
-Korišćeni elementi:
+```text
+my_nucleo_f401re
+```
 
-- custom board definition
-- Devicetree opis za LED, button i marker pin
-- `prj.conf`
+The custom board description is located inside the application project, under:
+
+```text
+button_latency/boards/st/my_nucleo_f401re/
+```
+
+The Zephyr implementation uses:
+
+- Devicetree hardware description
+- Kconfig configuration
 - GPIO driver API
+- GPIO callback mechanism
 - Zephyr semaphore
-- GPIO callback
+- `k_sem_give()`
+- `k_sem_take()`
 
-Osnovna signalna putanja:
+Zephyr signal path:
 
 ```text
 PC13 button press
     ↓
-Zephyr GPIO interrupt callback
+Zephyr GPIO interrupt handling
+    ↓
+GPIO callback
     ↓
 PA6 = HIGH
     ↓
@@ -164,124 +199,138 @@ k_sem_give()
     ↓
 Zephyr scheduler
     ↓
-main thread wakes up
+main thread resumes after k_sem_take()
     ↓
 PA6 = LOW
 ```
 
-### Build komanda za Zephyr
+The Zephyr implementation demonstrates the porting process at board level. Since the STM32F401xE SoC is already supported by Zephyr, the port mainly consists of the board description, Devicetree file, Kconfig connection to the SoC, default configuration and flashing integration.
 
-Primer build komande iz root foldera repozitorijuma:
+### Zephyr Build Example
+
+Example build command from the Zephyr workspace root, assuming `button_latency` is located inside the workspace:
 
 ```bat
-west build -p always -b my_nucleo_f401re zephyr -- -DBOARD_ROOT=%cd%/zephyr
+west build -p always -b my_nucleo_f401re button_latency -- -DBOARD_ROOT=%cd%\button_latency
 ```
 
-Ukoliko se build pokreće iz Zephyr workspace-a, putanje treba prilagoditi konkretnoj lokaciji projekta.
-
-Primer flash komande:
+Example flash command:
 
 ```bat
 west flash
 ```
 
----
-
-## Optimizacije
-
-Testirane su dve vrste optimizacije:
-
-1. optimizacija za veličinu
-2. optimizacija za brzinu
-
-Za FreeRTOS:
-
-- `-Os` za size optimized build
-- `-O2` za speed optimized build
-
-Za Zephyr:
-
-- `CONFIG_SIZE_OPTIMIZATIONS=y`
-- `CONFIG_SPEED_OPTIMIZATIONS=y`
+If the application is located elsewhere, replace `button_latency` and `BOARD_ROOT` with the actual path to the application folder.
 
 ---
 
-## Rezultati merenja latencije
+## Tested Optimizations
 
-### Size optimized build
+Two compiler optimization modes were tested:
 
-| RTOS | Optimizacija | Prosečna latencija | Minimum | Maksimum | Jitter |
+| RTOS | Size optimization | Speed optimization |
+|---|---|---|
+| FreeRTOS | `-Os` | `-O2` |
+| Zephyr | `CONFIG_SIZE_OPTIMIZATIONS=y` | `CONFIG_SPEED_OPTIMIZATIONS=y` |
+
+All measurements were performed with the CPU running at **84 MHz**.
+
+---
+
+## Latency Results
+
+Each configuration was measured using 30 logic analyzer samples.
+
+### Size Optimized Build
+
+| RTOS | Optimization | Min [µs] | Max [µs] | Average [µs] | Std. deviation [µs] |
 |---|---:|---:|---:|---:|---:|
-| FreeRTOS | `-Os` | 4.829 µs | 4.708 µs | 5.750 µs | 1.042 µs |
-| Zephyr | size optimization | 15.1916 µs | 15.167 µs | 15.208 µs | 0.041 µs |
+| Zephyr | size optimization | 15.125 | 15.208 | 15.192 | 0.023 |
+| FreeRTOS | `-Os` | 5.542 | 5.583 | 5.549 | 0.016 |
 
-Odnos:
+Ratio of average latencies:
 
 ```text
-Zephyr / FreeRTOS = 15.1916 / 4.829 ≈ 3.15
+Zephyr / FreeRTOS = 15.192 / 5.549 ≈ 2.74
 ```
 
-U ovom testu, Zephyr signalna putanja je bila približno 3.15 puta sporija od FreeRTOS signalne putanje.
+### Speed Optimized Build
 
-### Speed optimized build
-
-| RTOS | Optimizacija | Prosečna latencija | Minimum | Maksimum | Jitter |
+| RTOS | Optimization | Min [µs] | Max [µs] | Average [µs] | Std. deviation [µs] |
 |---|---:|---:|---:|---:|---:|
-| FreeRTOS | `-O2` | 4.7251 µs | 4.625 µs | 5.542 µs | 0.917 µs |
-| Zephyr | `CONFIG_SPEED_OPTIMIZATIONS=y` | 12.9128 µs | 12.875 µs | 12.917 µs | 0.042 µs |
+| Zephyr | `CONFIG_SPEED_OPTIMIZATIONS=y` | 12.833 | 12.917 | 12.857 | 0.024 |
+| FreeRTOS | `-O2` | 5.458 | 5.500 | 5.463 | 0.013 |
 
-Odnos:
+Ratio of average latencies:
 
 ```text
-Zephyr / FreeRTOS = 12.9128 / 4.7251 ≈ 2.73
+Zephyr / FreeRTOS = 12.857 / 5.463 ≈ 2.35
 ```
-
-U speed optimized konfiguraciji, Zephyr signalna putanja je bila približno 2.73 puta sporija od FreeRTOS signalne putanje.
 
 ---
 
-## Veličina programa
+## Program Size Results
 
-### Size optimized build
+Flash usage is calculated as:
 
-| RTOS | Flash | RAM |
-|---|---:|---:|
-| FreeRTOS `-Os` | 5192 B | 12080 B |
-| Zephyr size optimized | 15060 B | 4447 B |
+```text
+Flash = text + data
+```
 
-Napomena: FreeRTOS RAM uključuje statički rezervisan heap:
+RAM usage is calculated as:
+
+```text
+RAM = data + bss
+```
+
+| Configuration | text [B] | data [B] | bss [B] | Flash [B] | RAM [B] |
+|---|---:|---:|---:|---:|---:|
+| Zephyr, size optimization | 15000 | 60 | 4387 | 15060 | 4447 |
+| FreeRTOS, `-Os` | 6396 | 4 | 12084 | 6400 | 12088 |
+| Zephyr, speed optimization | 18552 | 60 | 4390 | 18612 | 4450 |
+| FreeRTOS, `-O2` | 6824 | 4 | 12084 | 6828 | 12088 |
+
+FreeRTOS RAM usage includes a statically reserved heap:
 
 ```c
-#define configTOTAL_HEAP_SIZE (10 * 1024)
+#define configTOTAL_HEAP_SIZE 10240
 ```
 
-Zato je korisno navesti i aproksimaciju:
+If this reserved heap is subtracted from the total RAM value, the remaining static RAM usage of the FreeRTOS image is approximately:
 
 ```text
-FreeRTOS RAM bez statički rezervisanog heap-a ≈ 1840 B
+12088 B - 10240 B = 1848 B
 ```
 
-### Speed optimized build
-
-| RTOS | Flash | RAM |
-|---|---:|---:|
-| FreeRTOS `-O2` | 5624 B | 12080 B |
-| Zephyr speed optimized | 18612 B | 4450 B |
+This comparison is not fully equivalent to the Zephyr RAM value, because FreeRTOS task stacks and kernel objects are allocated from the reserved heap, while Zephyr stacks are included directly in the reported `bss` section.
 
 ---
 
-## Zaključak
+## Discussion
 
-Na istoj STM32F401RE platformi i pri istoj frekvenciji od 84 MHz, FreeRTOS implementacija je pokazala manju prosečnu latenciju u merenoj putanji od Zephyr implementacije.
+The measured results show that the implemented FreeRTOS signal path has lower average latency than the implemented Zephyr signal path on the same hardware platform and at the same CPU frequency.
 
-Glavna razlika je u nivou apstrakcije:
+This result should be interpreted as a comparison of the complete implemented signal paths, not as an isolated comparison of the two kernel schedulers.
 
-- FreeRTOS implementacija koristi direktan EXTI interrupt handler i direktan pristup registrima.
-- Zephyr implementacija koristi GPIO driver, callback mehanizam i dodatne slojeve apstrakcije.
+The FreeRTOS implementation uses a direct EXTI interrupt handler and direct STM32 register access. The Zephyr implementation uses the GPIO driver layer, interrupt dispatching through the driver, a registered callback mechanism and the Zephyr kernel semaphore API.
 
+This additional abstraction in Zephyr improves portability and separates application code from board-specific hardware details, but it also increases code size and contributes to a longer measured signal path.
 
 ---
 
-## Napomena
+## Conclusion
 
-Repozitorijum je namenjen kao prateći kod za diplomski rad. Rezultati zavise od konkretne konfiguracije projekta, kompajlerske optimizacije, takta procesora itd...
+For this simple interrupt-to-task/thread latency experiment on STM32F401RE at 84 MHz:
+
+- FreeRTOS achieved lower average latency.
+- FreeRTOS used less Flash memory.
+- Zephyr provided a more portable and structured hardware abstraction model.
+- FreeRTOS total RAM usage was dominated by the statically reserved 10 KB heap.
+
+The results show the practical trade-off between low-level efficiency and higher-level portability.
+
+---
+
+## Note
+
+This repository is intended as supporting material for a diploma thesis. Results depend on the exact project configuration, compiler optimization level, CPU clock configuration, measurement method and logic analyzer resolution.
