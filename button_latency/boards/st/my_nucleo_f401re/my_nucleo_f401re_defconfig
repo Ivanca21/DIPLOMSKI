@@ -1,0 +1,8 @@
+# enable MPU
+CONFIG_ARM_MPU=y
+
+# Enable hardware stack protection
+CONFIG_HW_STACK_PROTECTION=y
+
+# Enable GPIO subsystem
+CONFIG_GPIO=y
