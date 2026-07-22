@@ -1,4 +1,0 @@
-# SPDX-License-Identifier: Apache-2.0
-
-config BOARD_MY_NUCLEO_F401RE
-	select SOC_STM32F401XE
