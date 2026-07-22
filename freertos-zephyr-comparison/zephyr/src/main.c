@@ -14,7 +14,7 @@
  * - p. 24: LD2 user LED on PA5 (devicetree alias led0).
  * - p. 24: B1 USER button on PC13 (devicetree alias sw0).
  * - p. 45: Arduino D12 = PA6, used as latency marker (alias latency0,
- *          provided by the application overlay).
+ *          defined in the custom board devicetree).
  */
 
  /* ===================== Devicetree bindings ===================== */
@@ -22,8 +22,9 @@
 /*
  * Devicetree aliases resolved at build time.
  *
- * led0 and sw0 are defined by the standard nucleo_f401re board files;
- * latency0 comes from the application overlay.
+ * led0, sw0 and latency0 are all defined in the custom board devicetree
+ * (my_nucleo_f401re.dts), so the application code never refers to a
+ * concrete GPIO port or pin number.
  */
 #define LED_NODE    DT_ALIAS(led0)
 #define BUTTON_NODE DT_ALIAS(sw0)
